@@ -21,7 +21,8 @@
 # Quick Start
 ## Arduino 
 >- Click "File" in the upper left corner -> Preferences -> Additional Development >Board Manager URL -> Enter the URL in the input box
-> `https://raw.githubusercontent.com/espressif/arduino-esp32/gh-pagespackage_esp32_index.json`
+> `https://raw.githubusercontent.com/espressif/arduino-esp32/gh-pages/package_esp32_index.json`
+
 >-  Click OK and the software will be installed by itself. After installation, restart the Arduino IDE software.
 
 ## PlatfromIO
