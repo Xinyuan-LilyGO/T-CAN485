@@ -25,6 +25,9 @@
 
 >-  Click OK and the software will be installed by itself. After installation, restart the Arduino IDE software.
 
+>- Arduino Setting ![img](img/arduino_setting.png)
+
+
 ## PlatfromIO
 > - PlatformIO plug-in installation: Click on the extension on the left column -> search platformIO -> install the first plug-in
 > - Click Platforms -> Embedded -> search Espressif 32 in the input box -> select the corresponding firmware installation
