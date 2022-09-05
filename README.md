@@ -1,8 +1,8 @@
 <h1 align = "center">🌟LilyGo T-CAN485🌟</h1>
 
 # Introduce
-![](img/T-CAN485-PINMAP-EN.jpg)
-![](img/T-CAN485-DETAIL-EN.jpg)
+![](img/T-CAN485-PINMAP1-EN.jpg)
+![](img/T-CAN485-DETAIL1-EN.jpg)
 
 ## Onboard functions
 - 1 x RS485 receiver.
