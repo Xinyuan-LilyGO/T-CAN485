@@ -19,6 +19,7 @@
 
 
 # Quick Start
+
 ## Arduino 
 >- Click "File" in the upper left corner -> Preferences -> Additional Development >Board Manager URL -> Enter the URL in the input box
 > `https://raw.githubusercontent.com/espressif/arduino-esp32/gh-pages/package_esp32_index.json`
@@ -31,6 +32,26 @@
 ## PlatfromIO
 > - PlatformIO plug-in installation: Click on the extension on the left column -> search platformIO -> install the first plug-in
 > - Click Platforms -> Embedded -> search Espressif 32 in the input box -> select the corresponding firmware installation
+
+## Udev Setup (Linux)
+
+If your board isn't present on the device tree, create a file with this content:
+
+```bash
+
+$ sudo cat /etc/udev/rules.d/70-lilygo.rules
+
+SUBSYSTEM=="tty", GROUP="plugdev". MODE="0660"
+SUBSYSTEMS=="usb", ATTRS{idProduct}=="55d4", ATTRS{idVendor}=="1a86", SYMLINK+="lilygo"
+```
+
+Then reload the rules as follow:
+
+```bash
+sudo udevadm control --reload-rules && sudo service udev restart && sudo udevadm trigger
+```
+
+Un-plug your Lilygo then plug it back, the device should be accessible on `/dev/lilygo`
 
 
 # Q&A
