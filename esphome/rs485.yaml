@@ -1,0 +1,42 @@
+# LILYGO T-CAN485 RS-485
+# ======================
+#
+# This ESPHome configuration file configures a LILYGO T-CAN485 board for
+# performing RS-485 communication. See
+# https://github.com/Xinyuan-LilyGO/T-CAN485 for more details on the hardware.
+#
+# To use this file, include it via the Remote Packages mechanism and set the
+# following in `substitutions`.
+# * `rs485_uart_id`. Mandatory. Set this to match the `id` of a `uart` component
+#   that you add with the same name where you configure the baud rate, parity,
+#   etc., and then attach to higher-level components.
+
+esp32:
+  board: esp32dev
+  framework:
+    type: arduino
+
+uart:
+  id: ${rs485_uart_id}
+  rx_pin: GPIO21
+  tx_pin: GPIO22
+
+# Set pins required for LILYGO T-CAN485 board
+# Source: https://github.com/Xinyuan-LilyGO/T-CAN485/issues/16#issuecomment-1872327090
+# Alternative: https://gist.github.com/Bwooce/7c43622dcc9bc1fbb04d7a0f1e5528df
+output:
+  - platform: gpio
+    id: ENABLE_PIN # Enable the chip
+    pin:
+      number: GPIO19
+      inverted: true
+  - platform: gpio
+    id: SE_PIN # Enable autodirection
+    pin:
+      number: GPIO17
+      inverted: true
+  - platform: gpio
+    id: ENABLE_5V_PIN # Enable 5V pin for RS485 chip
+    pin:
+      number: GPIO16
+      inverted: true
