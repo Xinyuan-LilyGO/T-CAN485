@@ -33,6 +33,10 @@
 > - PlatformIO plug-in installation: Click on the extension on the left column -> search platformIO -> install the first plug-in
 > - Click Platforms -> Embedded -> search Espressif 32 in the input box -> select the corresponding firmware installation
 
+## ESPHome
+
+Use a package from the [esphome](esphome) directory.
+
 ## Udev Setup (Linux)
 
 If your board isn't present on the device tree, create a file with this content:
