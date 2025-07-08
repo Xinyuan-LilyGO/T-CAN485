@@ -168,7 +168,7 @@ void Wifi_STA_Test(void)
     String text;
     int wifi_num = 0;
 
-    Serial0.println("\nScanning wifi");
+    Serial.println("\nScanning wifi");
 
     WiFi.mode(WIFI_STA);
     WiFi.disconnect();
@@ -198,17 +198,17 @@ void Wifi_STA_Test(void)
         }
     }
 
-    Serial0.println(text);
+    Serial.println(text);
 
     delay(3000);
     text.clear();
 
     text = "Connecting to ";
-    Serial0.print("Connecting to ");
+    Serial.print("Connecting to ");
     text += WIFI_SSID;
     text += "\n";
 
-    Serial0.print(WIFI_SSID);
+    Serial.print(WIFI_SSID);
 
     WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
 
@@ -216,7 +216,7 @@ void Wifi_STA_Test(void)
 
     while (WiFi.status() != WL_CONNECTED)
     {
-        Serial0.print(".");
+        Serial.print(".");
         text += ".";
         delay(100);
 
@@ -230,15 +230,15 @@ void Wifi_STA_Test(void)
     if (!Wifi_Connection_Failure_Flag)
     {
         text += "\nThe connection was successful ! \nTakes ";
-        Serial0.print("\nThe connection was successful ! \nTakes ");
+        Serial.print("\nThe connection was successful ! \nTakes ");
         text += millis() - last_tick;
-        Serial0.print(millis() - last_tick);
+        Serial.print(millis() - last_tick);
         text += " ms\n";
-        Serial0.println(" ms\n");
+        Serial.println(" ms\n");
     }
     else
     {
-        Serial0.printf("\nWifi test error!\n");
+        Serial.printf("\nWifi test error!\n");
     }
 }
 
@@ -276,27 +276,27 @@ void SD_Test()
     {
         SelfLocking_Flag = false;
 
-        Serial0.println("Detecting SD card");
+        Serial.println("Detecting SD card");
 
-        Serial0.println("SD card initialization failed !");
+        Serial.println("SD card initialization failed !");
         delay(100);
 
-        Serial0.println(".");
+        Serial.println(".");
         delay(100);
 
-        Serial0.println(".");
+        Serial.println(".");
         delay(100);
 
-        Serial0.println(".");
+        Serial.println(".");
         delay(100);
 
-        Serial0.println(".");
+        Serial.println(".");
         delay(100);
 
-        Serial0.println(".");
+        Serial.println(".");
         delay(100);
 
-        Serial0.println(".");
+        Serial.println(".");
         delay(100);
     }
     else
@@ -309,7 +309,7 @@ void SD_Test()
             delay(50);
         }
 
-        Serial0.println("SD card initialization successful !");
+        Serial.println("SD card initialization successful !");
         delay(100);
 
         cardType = SD.cardType();
@@ -318,33 +318,33 @@ void SD_Test()
         switch (cardType)
         {
         case CARD_NONE:
-            Serial0.println("No SD card attached");
+            Serial.println("No SD card attached");
             delay(100);
 
             break;
         case CARD_MMC:
-            Serial0.print("SD Card Type: ");
-            Serial0.println("MMC");
-            Serial0.printf("SD Card Size: %lluMB\n", cardSize);
+            Serial.print("SD Card Type: ");
+            Serial.println("MMC");
+            Serial.printf("SD Card Size: %lluMB\n", cardSize);
             delay(100);
 
             break;
         case CARD_SD:
-            Serial0.print("SD Card Type: ");
-            Serial0.println("SDSC");
-            Serial0.printf("SD Card Size: %lluMB\n", cardSize);
+            Serial.print("SD Card Type: ");
+            Serial.println("SDSC");
+            Serial.printf("SD Card Size: %lluMB\n", cardSize);
             delay(100);
 
             break;
         case CARD_SDHC:
-            Serial0.print("SD Card Type: ");
-            Serial0.println("SDHC");
-            Serial0.printf("SD Card Size: %lluMB\n", cardSize);
+            Serial.print("SD Card Type: ");
+            Serial.println("SDHC");
+            Serial.printf("SD Card Size: %lluMB\n", cardSize);
             delay(100);
 
             break;
         default:
-            Serial0.println("UNKNOWN");
+            Serial.println("UNKNOWN");
             delay(100);
 
             break;
@@ -450,8 +450,8 @@ void Twai_Receive_Message(twai_message_t &message)
 
 void setup()
 {
-    Serial0.begin(115200);
-    Serial0.println("Ciallo");
+    Serial.begin(115200);
+    Serial.println("Ciallo");
 
     pinMode(0, INPUT_PULLUP);
 
@@ -515,7 +515,7 @@ void setup()
         while (httpCode == HTTP_CODE_MOVED_PERMANENTLY || httpCode == HTTP_CODE_FOUND)
         {
             String newUrl = http.header("Location");
-            Serial0.printf("Redirecting to: %s\n", newUrl.c_str());
+            Serial.printf("Redirecting to: %s\n", newUrl.c_str());
             http.end(); // 关闭旧的HTTP连接
 
             // 使用新的URL重新发起GET请求
@@ -527,8 +527,8 @@ void setup()
         {
             // 获取文件大小
             size_t fileSize = http.getSize();
-            Serial0.printf("Starting file download...\n");
-            Serial0.printf("file size: %f Mb\n", fileSize / 1024.0 / 1024.0);
+            Serial.printf("Starting file download...\n");
+            Serial.printf("file size: %f Mb\n", fileSize / 1024.0 / 1024.0);
 
             // 读取HTTP响应
             WiFiClient *stream = http.getStreamPtr();
@@ -551,8 +551,8 @@ void setup()
                     {
                         size_t temp_time_1 = millis();
                         temp_count_s++;
-                        Serial0.printf("Download speed: %f Kb/s\n", ((fileSize - temp_fileSize) / 1024.0) / temp_count_s);
-                        Serial0.printf("Remaining file size: %f Mb\n\n", temp_fileSize / 1024.0 / 1024.0);
+                        Serial.printf("Download speed: %f Kb/s\n", ((fileSize - temp_fileSize) / 1024.0) / temp_count_s);
+                        Serial.printf("Remaining file size: %f Mb\n\n", temp_fileSize / 1024.0 / 1024.0);
 
                         CycleTime = millis() + 1000;
                         size_t temp_time_2 = millis();
@@ -582,26 +582,26 @@ void setup()
 
             if (temp_count_flag == true)
             {
-                Serial0.printf("Download completed!\n");
-                Serial0.printf("Total download time: %f s\n", (endTime - startTime - uselessTime) / 1000.0);
-                Serial0.printf("Average download speed: %f Kb/s\n", (fileSize / 1024.0) / ((endTime - startTime - uselessTime) / 1000.0));
+                Serial.printf("Download completed!\n");
+                Serial.printf("Total download time: %f s\n", (endTime - startTime - uselessTime) / 1000.0);
+                Serial.printf("Average download speed: %f Kb/s\n", (fileSize / 1024.0) / ((endTime - startTime - uselessTime) / 1000.0));
             }
             else
             {
-                Serial0.printf("Download incomplete!\n");
-                Serial0.printf("Download time: %f s\n", (endTime - startTime - uselessTime) / 1000.0);
-                Serial0.printf("Average download speed: %f Kb/s\n", ((fileSize - temp_fileSize) / 1024.0) / ((endTime - startTime - uselessTime) / 1000.0));
+                Serial.printf("Download incomplete!\n");
+                Serial.printf("Download time: %f s\n", (endTime - startTime - uselessTime) / 1000.0);
+                Serial.printf("Average download speed: %f Kb/s\n", ((fileSize - temp_fileSize) / 1024.0) / ((endTime - startTime - uselessTime) / 1000.0));
             }
         }
         else
         {
-            Serial0.printf("Failed to download\n");
-            Serial0.printf("Error httpCode: %d \n", httpCode);
+            Serial.printf("Failed to download\n");
+            Serial.printf("Error httpCode: %d \n", httpCode);
         }
     }
     else
     {
-        Serial0.print("Not connected to the network");
+        Serial.print("Not connected to the network");
     }
     delay(1000);
 
@@ -637,7 +637,7 @@ void loop()
         FastLED.show();
 
         Twai_Send_Message();
-        Serial0.println("CAN send done");
+        Serial.println("CAN send done");
     }
 
     while (Serial1.available() > 0)
@@ -653,14 +653,14 @@ void loop()
                 FastLED.show();
                 while (1)
                 {
-                    Serial0.printf("Check Dynamic Data Failed\n");
-                    Serial0.printf("Check Data: %d\n", Uart_Count);
-                    Serial0.printf("Received Data: %d\n", (uint32_t)Uart_Buf[1] << 24 | (uint32_t)Uart_Buf[2] << 16 |
+                    Serial.printf("Check Dynamic Data Failed\n");
+                    Serial.printf("Check Data: %d\n", Uart_Count);
+                    Serial.printf("Received Data: %d\n", (uint32_t)Uart_Buf[1] << 24 | (uint32_t)Uart_Buf[2] << 16 |
                                                               (uint32_t)Uart_Buf[3] << 8 | (uint32_t)Uart_Buf[4]);
-                    Serial0.printf("Received Buf[1]: %#X\n", Uart_Buf[1]);
-                    Serial0.printf("Received Buf[2]: %#X\n", Uart_Buf[2]);
-                    Serial0.printf("Received Buf[3]: %#X\n", Uart_Buf[3]);
-                    Serial0.printf("Received Buf[4]: %#X\n", Uart_Buf[4]);
+                    Serial.printf("Received Buf[1]: %#X\n", Uart_Buf[1]);
+                    Serial.printf("Received Buf[2]: %#X\n", Uart_Buf[2]);
+                    Serial.printf("Received Buf[3]: %#X\n", Uart_Buf[3]);
+                    Serial.printf("Received Buf[4]: %#X\n", Uart_Buf[4]);
                     delay(1000);
                 }
             }
@@ -668,10 +668,10 @@ void loop()
             {
                 leds[0] = CRGB::Pink;
                 FastLED.show();
-                Serial0.printf("Check Static Data Failed\n");
+                Serial.printf("Check Static Data Failed\n");
                 for (int i = 0; i < 100; i++)
                 {
-                    Serial0.printf("Received Buf[%d]: %#X\n", i + 5, Uart_Buf[i + 5]);
+                    Serial.printf("Received Buf[%d]: %#X\n", i + 5, Uart_Buf[i + 5]);
                 }
                 delay(1000);
             }
@@ -681,16 +681,16 @@ void loop()
                 FastLED.show();
                 delay(500);
 
-                Serial0.printf("Check Data Successful\n");
-                Serial0.printf("Check Data: %d\n", Uart_Count);
-                Serial0.printf("Received Data: %d\n", (uint32_t)Uart_Buf[1] << 24 | (uint32_t)Uart_Buf[2] << 16 |
+                Serial.printf("Check Data Successful\n");
+                Serial.printf("Check Data: %d\n", Uart_Count);
+                Serial.printf("Received Data: %d\n", (uint32_t)Uart_Buf[1] << 24 | (uint32_t)Uart_Buf[2] << 16 |
                                                           (uint32_t)Uart_Buf[3] << 8 | (uint32_t)Uart_Buf[4]);
-                Serial0.printf("Received Buf[1]: %#X\n", Uart_Buf[1]);
-                Serial0.printf("Received Buf[2]: %#X\n", Uart_Buf[2]);
-                Serial0.printf("Received Buf[3]: %#X\n", Uart_Buf[3]);
-                Serial0.printf("Received Buf[4]: %#X\n", Uart_Buf[4]);
+                Serial.printf("Received Buf[1]: %#X\n", Uart_Buf[1]);
+                Serial.printf("Received Buf[2]: %#X\n", Uart_Buf[2]);
+                Serial.printf("Received Buf[3]: %#X\n", Uart_Buf[3]);
+                Serial.printf("Received Buf[4]: %#X\n", Uart_Buf[4]);
 
-                Serial0.printf("Received Buf[105]: %#X\n", Uart_Buf[104]);
+                Serial.printf("Received Buf[105]: %#X\n", Uart_Buf[104]);
 
                 Uart_Count++;
 
@@ -713,20 +713,20 @@ void loop()
             leds[0] = CRGB::Orange;
             FastLED.show();
             delay(500);
-            Serial0.printf("Check Header Failed\n");
-            Serial0.printf("Received Header: %#X\n", Uart_Buf[0]);
-            Serial0.printf("Received Data: %d\n", (uint32_t)Uart_Buf[1] << 24 | (uint32_t)Uart_Buf[2] << 16 |
+            Serial.printf("Check Header Failed\n");
+            Serial.printf("Received Header: %#X\n", Uart_Buf[0]);
+            Serial.printf("Received Data: %d\n", (uint32_t)Uart_Buf[1] << 24 | (uint32_t)Uart_Buf[2] << 16 |
                                                       (uint32_t)Uart_Buf[3] << 8 | (uint32_t)Uart_Buf[4]);
-            Serial0.printf("Received Buf[1]: %#X\n", Uart_Buf[1]);
-            Serial0.printf("Received Buf[2]: %#X\n", Uart_Buf[2]);
-            Serial0.printf("Received Buf[3]: %#X\n", Uart_Buf[3]);
-            Serial0.printf("Received Buf[4]: %#X\n", Uart_Buf[4]);
+            Serial.printf("Received Buf[1]: %#X\n", Uart_Buf[1]);
+            Serial.printf("Received Buf[2]: %#X\n", Uart_Buf[2]);
+            Serial.printf("Received Buf[3]: %#X\n", Uart_Buf[3]);
+            Serial.printf("Received Buf[4]: %#X\n", Uart_Buf[4]);
             leds[0] = CRGB::Black;
             FastLED.show();
         }
 
         Twai_Send_Message();
-        Serial0.println("CAN send done");
+        Serial.println("CAN send done");
     }
 
     // 通信报警检测

@@ -26,8 +26,8 @@ CRGB leds[NUM_LEDS];
 
 void setup()
 {
-    Serial0.begin(115200);
-    Serial0.println("Ciallo");
+    Serial.begin(115200);
+    Serial.println("Ciallo");
 
     pinMode(ME2107_EN, OUTPUT);
     digitalWrite(ME2107_EN, HIGH);
@@ -67,12 +67,12 @@ void loop()
         FastLED.show();
         delay(500);
         Serial1.read(temp_data, sizeof(temp_data));
-        Serial0.printf("Receive Data: ");
+        Serial.printf("Receive Data: ");
         for (int i = 0; i < sizeof(temp_data); i++)
         {
-            Serial0.printf("%c", temp_data[i]);
+            Serial.printf("%c", temp_data[i]);
         }
-        Serial0.printf("\n");
+        Serial.printf("\n");
         leds[0] = CRGB::Black;
         FastLED.show();
     }

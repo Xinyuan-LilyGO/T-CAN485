@@ -28,16 +28,16 @@ static size_t CycleTime = 0;
 
 void setup()
 {
-    Serial0.begin(115200);
+    Serial.begin(115200);
 
     // 连接到Wi-Fi
     WiFi.begin(ssid, password);
     while (WiFi.status() != WL_CONNECTED)
     {
         delay(1000);
-        Serial0.println("Connecting to WiFi...");
+        Serial.println("Connecting to WiFi...");
     }
-    Serial0.println("Successfully connected to WiFi");
+    Serial.println("Successfully connected to WiFi");
 
     // 初始化HTTP客户端
     HTTPClient http;
@@ -57,7 +57,7 @@ void setup()
     while (httpCode == HTTP_CODE_MOVED_PERMANENTLY || httpCode == HTTP_CODE_FOUND)
     {
         String newUrl = http.header("Location");
-        Serial0.printf("Redirecting to: %s\n", newUrl.c_str());
+        Serial.printf("Redirecting to: %s\n", newUrl.c_str());
         http.end(); // 关闭旧的HTTP连接
 
         // 使用新的URL重新发起GET请求
@@ -69,8 +69,8 @@ void setup()
     {
         // 获取文件大小
         size_t fileSize = http.getSize();
-        Serial0.printf("Starting file download...\n");
-        Serial0.printf("file size: %f MB\n", fileSize / 1024.0 / 1024.0);
+        Serial.printf("Starting file download...\n");
+        Serial.printf("file size: %f MB\n", fileSize / 1024.0 / 1024.0);
 
         // 读取HTTP响应
         WiFiClient *stream = http.getStreamPtr();
@@ -92,8 +92,8 @@ void setup()
                 {
                     size_t temp_time_1 = millis();
                     temp_count_s++;
-                    Serial0.printf("Download speed: %f KB/s\n", ((fileSize - temp_fileSize) / 1024.0) / temp_count_s);
-                    Serial0.printf("Remaining file size: %f MB\n\n", temp_fileSize / 1024.0 / 1024.0);
+                    Serial.printf("Download speed: %f KB/s\n", ((fileSize - temp_fileSize) / 1024.0) / temp_count_s);
+                    Serial.printf("Remaining file size: %f MB\n\n", temp_fileSize / 1024.0 / 1024.0);
 
                     CycleTime = millis() + 1000;
                     size_t temp_time_2 = millis();
@@ -114,14 +114,14 @@ void setup()
 
         // 记录下载结束时间并计算总花费时间
         size_t endTime = millis();
-        Serial0.printf("Download completed!\n");
-        Serial0.printf("Total download time: %f s\n", (endTime - startTime - uselessTime) / 1000.0);
-        Serial0.printf("Average download speed: %f KB/s\n", (fileSize / 1024.0) / ((endTime - startTime - uselessTime) / 1000.0));
+        Serial.printf("Download completed!\n");
+        Serial.printf("Total download time: %f s\n", (endTime - startTime - uselessTime) / 1000.0);
+        Serial.printf("Average download speed: %f KB/s\n", (fileSize / 1024.0) / ((endTime - startTime - uselessTime) / 1000.0));
     }
     else
     {
-        Serial0.printf("Failed to download\n");
-        Serial0.printf("Error httpCode: %d \n", httpCode);
+        Serial.printf("Failed to download\n");
+        Serial.printf("Error httpCode: %d \n", httpCode);
     }
 }
 

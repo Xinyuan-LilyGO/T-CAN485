@@ -19,7 +19,7 @@ bool SelfLocking_Flag = false;
 
 void setup()
 {
-    Serial0.begin(115200);
+    Serial.begin(115200);
 
     // pinMode(37, INPUT_PULLUP);// MISO pull-up resistor
     SPI.begin(SD_SCLK, SD_MISO, SD_MOSI, SD_CS); // SPI boots
@@ -35,27 +35,27 @@ void loop()
     {
         SelfLocking_Flag = false;
 
-        Serial0.println("Detecting SD card");
+        Serial.println("Detecting SD card");
 
-        Serial0.println("SD card initialization failed !");
+        Serial.println("SD card initialization failed !");
         delay(100);
 
-        Serial0.println(".");
+        Serial.println(".");
         delay(100);
 
-        Serial0.println(".");
+        Serial.println(".");
         delay(100);
 
-        Serial0.println(".");
+        Serial.println(".");
         delay(100);
 
-        Serial0.println(".");
+        Serial.println(".");
         delay(100);
 
-        Serial0.println(".");
+        Serial.println(".");
         delay(100);
 
-        Serial0.println(".");
+        Serial.println(".");
         delay(100);
     }
     else
@@ -68,7 +68,7 @@ void loop()
             delay(50);
         }
 
-        Serial0.println("SD card initialization successful !");
+        Serial.println("SD card initialization successful !");
         delay(100);
 
         cardType = SD.cardType();
@@ -77,33 +77,33 @@ void loop()
         switch (cardType)
         {
         case CARD_NONE:
-            Serial0.println("No SD card attached");
+            Serial.println("No SD card attached");
             delay(100);
 
             break;
         case CARD_MMC:
-            Serial0.print("SD Card Type: ");
-            Serial0.println("MMC");
-            Serial0.printf("SD Card Size: %lluMB\n", cardSize);
+            Serial.print("SD Card Type: ");
+            Serial.println("MMC");
+            Serial.printf("SD Card Size: %lluMB\n", cardSize);
             delay(100);
 
             break;
         case CARD_SD:
-            Serial0.print("SD Card Type: ");
-            Serial0.println("SDSC");
-            Serial0.printf("SD Card Size: %lluMB\n", cardSize);
+            Serial.print("SD Card Type: ");
+            Serial.println("SDSC");
+            Serial.printf("SD Card Size: %lluMB\n", cardSize);
             delay(100);
 
             break;
         case CARD_SDHC:
-            Serial0.print("SD Card Type: ");
-            Serial0.println("SDHC");
-            Serial0.printf("SD Card Size: %lluMB\n", cardSize);
+            Serial.print("SD Card Type: ");
+            Serial.println("SDHC");
+            Serial.printf("SD Card Size: %lluMB\n", cardSize);
             delay(100);
 
             break;
         default:
-            Serial0.println("UNKNOWN");
+            Serial.println("UNKNOWN");
             delay(100);
 
             break;

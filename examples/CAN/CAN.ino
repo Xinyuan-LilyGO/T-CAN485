@@ -11,7 +11,7 @@
  * @LastEditTime: 2024-06-24 10:09:19
  * @License: GPL 3.0
  */
-
+#include <Arduino.h>
 #include "driver/twai.h"
 #include "pin_config.h"
 
