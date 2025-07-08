@@ -23,12 +23,26 @@
 | T-CAN485   | ESP32 |   4M   | - |   [AliExpress](https://pt.aliexpress.com/item/1005003624034092.html)  |
 
 ## Directory
+- [**English | 中文**](#english--中文)
+- [Version iteration:](#version-iteration)
+- [PurchaseLink](#purchaselink)
+- [Directory](#directory)
 - [Describe](#describe)
 - [Preview](#preview)
+  - [PCB board](#pcb-board)
+  - [Details](#details)
 - [Module](#module)
+  - [1.MCU](#1mcu)
+  - [2. RS485](#2-rs485)
+  - [3. CAN](#3-can)
+  - [4. Booster chip](#4-booster-chip)
 - [QuickStart](#quickstart)
+  - [Examples Support](#examples-support)
+  - [Arduino](#arduino)
+    - [ESP32](#esp32)
+  - [firmware download](#firmware-download)
 - [PinOverview](#pinoverview)
-- [RelatedTests](#RelatedTests)
+- [RelatedTests](#relatedtests)
 - [FAQ](#faq)
 - [Project](#project)
 - [Information](#information)
@@ -98,7 +112,7 @@ The T-CAN485 is a core board developed based on the ESP32 chip, featuring 1 CAN 
 
 3. Open the "Tools" menu at the top right -> Select "Board" -> "Board Manager." Find or search for "esp32" and download the board files from the author named "Espressif Systems." Then, go back to the "Board" menu and select the development board type under "ESP32 Arduino." The selected development board type should match the one specified in the "platformio.ini" file under the [env] section with the header "board = xxx." If there is no corresponding development board, you may need to manually add the development board from the "board" directory within your project folder.
 
-4. Open menu bar "[File](image/6.png)" -> "[Preferences](image/6.png)" ,Find "[Sketchbook location](image/7.png)"  here,copy and paste all library files and folders from the "libraries" folder in the project directory into the "libraries" folder in this directory.
+4. Open menu bar "[File](image/6.png)" -> "[Preferences](image/6.png)" ,Find "[Sketchbook location](image/7.png)"  here,copy and paste all library files and folders from the "lib" folder in the project directory into the "lib" folder in this directory.
 
 5. Select the correct settings in the Tools menu, as shown in the table below.
 
