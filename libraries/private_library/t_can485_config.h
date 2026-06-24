@@ -36,6 +36,10 @@ inline constexpr int kMosi = 15;
 inline constexpr int kSclk = 14;
 inline constexpr int kCs = 13;
 }  // namespace sd
+
+namespace button {
+inline constexpr int kEsp32Boot = 0;
+}  // namespace button
 }  // namespace gpio
 
 namespace device {

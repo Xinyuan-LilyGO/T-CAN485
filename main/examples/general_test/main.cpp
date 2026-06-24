@@ -2,7 +2,7 @@
  * @Description: None
  * @Author: LILYGO_L
  * @Date: 2026-06-23 21:08:06
- * @LastEditTime: 2026-06-24 10:51:29
+ * @LastEditTime: 2026-06-24 17:59:18
  * @License: GPL 3.0
  */
 #include <array>
@@ -197,6 +197,20 @@ void InitBoardPins()
       static_cast<gpio_num_t>(t_can485::gpio::rs485::kCallback), 1));
   ESP_ERROR_CHECK(gpio_set_level(
       static_cast<gpio_num_t>(t_can485::gpio::can::kSpeedMode), 0));
+
+  gpio_config_t button_config = {};
+  button_config.pin_bit_mask = 1ULL << t_can485::gpio::button::kEsp32Boot;
+  button_config.mode = GPIO_MODE_INPUT;
+  button_config.pull_up_en = GPIO_PULLUP_ENABLE;
+  button_config.pull_down_en = GPIO_PULLDOWN_DISABLE;
+  button_config.intr_type = GPIO_INTR_DISABLE;
+  ESP_ERROR_CHECK(gpio_config(&button_config));
+}
+
+bool IsEsp32BootPressed()
+{
+  return gpio_get_level(
+             static_cast<gpio_num_t>(t_can485::gpio::button::kEsp32Boot)) == 0;
 }
 
 void GpioLoopTask(void* param)
@@ -925,6 +939,7 @@ const char* StatusJson()
       "\"sd\":{\"mounted\":%s,\"name\":\"%s\",\"type\":\"%s\","
       "\"size_mb\":%llu,\"sector_size\":%lu,\"sector_count\":%llu,"
       "\"error\":\"%s\"},"
+      "\"button\":{\"esp32_boot_pressed\":%s,\"esp32_boot_gpio\":%d},"
       "\"rs485\":{\"mode\":\"%s\",\"total\":%u,\"ok\":%s,"
       "\"crc_errors\":%lu,\"sequence_errors\":%lu},"
       "\"can\":{\"mode\":\"%s\",\"total\":%u,\"ok\":%s,\"state\":\"%s\","
@@ -937,7 +952,8 @@ const char* StatusJson()
       static_cast<unsigned long long>(g_sd_size_mb),
       static_cast<unsigned long>(g_sd_sector_size),
       static_cast<unsigned long long>(g_sd_sector_count), g_sd_error,
-      ModeName(rs485_mode),
+      IsEsp32BootPressed() ? "true" : "false",
+      t_can485::gpio::button::kEsp32Boot, ModeName(rs485_mode),
       static_cast<unsigned>(g_rs485_total_size),
       g_rs485_data_ok ? "true" : "false",
       static_cast<unsigned long>(g_rs485_crc_error_count),
@@ -977,6 +993,7 @@ button.active{background:#1f8f5f;border-color:#32b878}
 </section>
 <section class="grid">
 <div class="card"><div class="label">SD Card</div><div class="value" id="sd">-</div><div class="small" id="sdinfo"></div></div>
+<div class="card"><div class="label">ESP32 Boot Button</div><div class="value" id="bootbtn">-</div><div class="small" id="bootbtninfo"></div></div>
 </section>
 <section class="grid">
 <div class="card"><div class="label">RS485</div><div class="value" id="rs485">-</div><div class="small" id="rs485t"></div><div class="row"><button onclick="setMode('rs485','send')">Send</button><button onclick="setMode('rs485','receive')">Receive</button><button onclick="setMode('rs485','stop')">Stop</button></div></div>
@@ -990,6 +1007,7 @@ async function refresh(){
  time.textContent=s.time; timeage.textContent=`updated ${s.time_age_seconds} s ago`; sta.textContent=s.wifi.sta?s.wifi.sta_ssid:'Connecting'; sta.className='value '+(s.wifi.sta?'ok':'bad');
  staip.textContent=s.wifi.sta?`${s.wifi.sta_ip} | RSSI ${s.wifi.sta_rssi} dBm`:s.wifi.sta_ip; ap.textContent=s.wifi.ap_ssid; apip.textContent=s.wifi.ap_ip;
  sd.textContent=s.sd.mounted?'Detected':'Not detected'; sd.className='value '+(s.sd.mounted?'ok':'bad'); sdinfo.textContent=`name ${s.sd.name} | ${s.sd.type} | ${s.sd.size_mb} MB | sector ${s.sd.sector_size} B | count ${s.sd.sector_count} | ${s.sd.error}`;
+ bootbtn.textContent=s.button.esp32_boot_pressed?'Pressed':'Released'; bootbtn.className='value '+(s.button.esp32_boot_pressed?'ok':'bad'); bootbtninfo.textContent=`GPIO ${s.button.esp32_boot_gpio} | active low`;
  const rs485Mode=s.rs485.mode.charAt(0).toUpperCase()+s.rs485.mode.slice(1);
  const canMode=s.can.mode.charAt(0).toUpperCase()+s.can.mode.slice(1);
  rs485.textContent=rs485Mode; rs485.className='value '+(s.rs485.ok?'ok':'bad'); rs485t.textContent=s.rs485.mode==='send'?`total ${s.rs485.total} B`:`total ${s.rs485.total} B | crc error ${s.rs485.crc_errors} | seq error ${s.rs485.sequence_errors}`;
