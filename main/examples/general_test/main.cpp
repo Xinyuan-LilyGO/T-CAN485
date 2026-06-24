@@ -80,7 +80,9 @@ constexpr char kCanTestChar = 'C';
 constexpr int kCanTxQueueDepth = 16;
 constexpr int kCanRxQueueDepth = 32;
 
-constexpr int kWs2812LedCount = 1;
+constexpr std::array<int, 2> kLoopGpios = {5, 33};
+constexpr int kGpioLoopPeriodMs = 1000;
+constexpr int kWs2812LedCount = t_can485::device::ws2812::kLedCount;
 constexpr int kWs2812ResolutionHz = 10 * 1000 * 1000;
 constexpr uint8_t kWs2812Brightness = 32;
 constexpr int kWs2812PeriodMs = 1000;
@@ -175,8 +177,11 @@ uint8_t ScaleColor(uint8_t value)
 
 void InitBoardPins()
 {
-  const uint64_t pin_mask = (1ULL << ME2107_EN) | (1ULL << RS485_CALLBACK) |
-                            (1ULL << RS485_EN) | (1ULL << CAN_SPEED_MODE);
+  const uint64_t pin_mask =
+      (1ULL << t_can485::gpio::me2107::kEnable) |
+      (1ULL << t_can485::gpio::rs485::kCallback) |
+      (1ULL << t_can485::gpio::rs485::kEnable) |
+      (1ULL << t_can485::gpio::can::kSpeedMode);
   gpio_config_t config = {};
   config.pin_bit_mask = pin_mask;
   config.mode = GPIO_MODE_OUTPUT;
@@ -184,16 +189,63 @@ void InitBoardPins()
   config.pull_down_en = GPIO_PULLDOWN_DISABLE;
   config.intr_type = GPIO_INTR_DISABLE;
   ESP_ERROR_CHECK(gpio_config(&config));
-  ESP_ERROR_CHECK(gpio_set_level(ME2107_EN, 1));
-  ESP_ERROR_CHECK(gpio_set_level(RS485_EN, 1));
-  ESP_ERROR_CHECK(gpio_set_level(RS485_CALLBACK, 1));
-  ESP_ERROR_CHECK(gpio_set_level(CAN_SPEED_MODE, 0));
+  ESP_ERROR_CHECK(gpio_set_level(
+      static_cast<gpio_num_t>(t_can485::gpio::me2107::kEnable), 1));
+  ESP_ERROR_CHECK(gpio_set_level(
+      static_cast<gpio_num_t>(t_can485::gpio::rs485::kEnable), 1));
+  ESP_ERROR_CHECK(gpio_set_level(
+      static_cast<gpio_num_t>(t_can485::gpio::rs485::kCallback), 1));
+  ESP_ERROR_CHECK(gpio_set_level(
+      static_cast<gpio_num_t>(t_can485::gpio::can::kSpeedMode), 0));
+}
+
+void GpioLoopTask(void* param)
+{
+  (void)param;
+  std::array<bool, kLoopGpios.size()> output_enabled = {};
+
+  for (size_t i = 0; i < kLoopGpios.size(); ++i) {
+    const int gpio = kLoopGpios[i];
+    if (!GPIO_IS_VALID_OUTPUT_GPIO(gpio)) {
+      printf("[gpio_loop] GPIO%d is not output capable, skip\n", gpio);
+      continue;
+    }
+
+    gpio_config_t config = {};
+    config.pin_bit_mask = 1ULL << gpio;
+    config.mode = GPIO_MODE_OUTPUT;
+    config.pull_up_en = GPIO_PULLUP_DISABLE;
+    config.pull_down_en = GPIO_PULLDOWN_DISABLE;
+    config.intr_type = GPIO_INTR_DISABLE;
+
+    const esp_err_t err = gpio_config(&config);
+    if (err != ESP_OK) {
+      printf("[gpio_loop] GPIO%d config failed: %s\n", gpio,
+             esp_err_to_name(err));
+      continue;
+    }
+    output_enabled[i] = true;
+  }
+
+  int level = 0;
+  while (true) {
+    level = level == 0 ? 1 : 0;
+    for (size_t i = 0; i < kLoopGpios.size(); ++i) {
+      if (!output_enabled[i]) {
+        continue;
+      }
+      ESP_ERROR_CHECK(gpio_set_level(static_cast<gpio_num_t>(kLoopGpios[i]),
+                                     level));
+    }
+    printf("[gpio_loop] level=%d\n", level);
+    vTaskDelay(pdMS_TO_TICKS(kGpioLoopPeriodMs));
+  }
 }
 
 esp_err_t InitWs2812(led_strip_handle_t* led_strip)
 {
   led_strip_config_t strip_config = {};
-  strip_config.strip_gpio_num = WS2812B_DATA;
+  strip_config.strip_gpio_num = t_can485::gpio::ws2812::kData;
   strip_config.max_leds = kWs2812LedCount;
   strip_config.led_model = LED_MODEL_WS2812;
   strip_config.color_component_format = LED_STRIP_COLOR_COMPONENT_FMT_GRB;
@@ -240,9 +292,9 @@ bool InitSdSpiBus()
   }
 
   spi_bus_config_t bus_config = {};
-  bus_config.mosi_io_num = SD_MOSI;
-  bus_config.miso_io_num = SD_MISO;
-  bus_config.sclk_io_num = SD_SCLK;
+  bus_config.mosi_io_num = t_can485::gpio::sd::kMosi;
+  bus_config.miso_io_num = t_can485::gpio::sd::kMiso;
+  bus_config.sclk_io_num = t_can485::gpio::sd::kSclk;
   bus_config.quadwp_io_num = -1;
   bus_config.quadhd_io_num = -1;
   bus_config.max_transfer_sz = 4000;
@@ -284,7 +336,7 @@ bool ProbeSdCard()
 
   sdspi_device_config_t slot_config = SDSPI_DEVICE_CONFIG_DEFAULT();
   slot_config.host_id = static_cast<spi_host_device_t>(host.slot);
-  slot_config.gpio_cs = static_cast<gpio_num_t>(SD_CS);
+  slot_config.gpio_cs = static_cast<gpio_num_t>(t_can485::gpio::sd::kCs);
 
   esp_vfs_fat_sdmmc_mount_config_t mount_config = {};
   mount_config.format_if_mount_failed = false;
@@ -479,7 +531,8 @@ bool InitRs485()
     uart_driver_delete(kRs485UartPort);
     return false;
   }
-  err = uart_set_pin(kRs485UartPort, RS485_TX, RS485_RX, UART_PIN_NO_CHANGE,
+  err = uart_set_pin(kRs485UartPort, t_can485::gpio::rs485::kTx,
+                     t_can485::gpio::rs485::kRx, UART_PIN_NO_CHANGE,
                      UART_PIN_NO_CHANGE);
   if (err != ESP_OK) {
     uart_driver_delete(kRs485UartPort);
@@ -575,7 +628,9 @@ bool InitCan()
   std::snprintf(g_can_state_text, sizeof(g_can_state_text), "%s", "running");
 
   twai_general_config_t general_config =
-      TWAI_GENERAL_CONFIG_DEFAULT(CAN_TX, CAN_RX, TWAI_MODE_NORMAL);
+      TWAI_GENERAL_CONFIG_DEFAULT(
+          static_cast<gpio_num_t>(t_can485::gpio::can::kTx),
+          static_cast<gpio_num_t>(t_can485::gpio::can::kRx), TWAI_MODE_NORMAL);
   general_config.tx_queue_len = kCanTxQueueDepth;
   general_config.rx_queue_len = kCanRxQueueDepth;
   general_config.alerts_enabled =
@@ -938,7 +993,7 @@ async function refresh(){
  const rs485Mode=s.rs485.mode.charAt(0).toUpperCase()+s.rs485.mode.slice(1);
  const canMode=s.can.mode.charAt(0).toUpperCase()+s.can.mode.slice(1);
  rs485.textContent=rs485Mode; rs485.className='value '+(s.rs485.ok?'ok':'bad'); rs485t.textContent=s.rs485.mode==='send'?`total ${s.rs485.total} B`:`total ${s.rs485.total} B | crc error ${s.rs485.crc_errors} | seq error ${s.rs485.sequence_errors}`;
- can.textContent=canMode; can.className='value '+(s.can.ok?'ok':'bad'); cant.textContent=`total ${s.can.total} B | bus error ${s.can.bus_errors} | ${s.can.state}`;
+ can.textContent=canMode; can.className='value '+(s.can.ok?'ok':'bad'); cant.textContent=`total ${s.can.total} B | bus error ${s.can.bus_errors}`;
 }
 setInterval(refresh,1000);refresh();
 </script>
@@ -1035,6 +1090,8 @@ extern "C" void app_main(void)
   xTaskCreate(WifiInfoTask, "wifi_info_task", kTaskStackSize, nullptr,
               kTaskPriority, nullptr);
   xTaskCreate(Ws2812Task, "ws2812_task", kTaskStackSize, nullptr,
+              kTaskPriority, nullptr);
+  xTaskCreate(GpioLoopTask, "gpio_loop_task", kTaskStackSize, nullptr,
               kTaskPriority, nullptr);
   xTaskCreate(SdTask, "sd_task", kTaskStackSize, nullptr, kTaskPriority,
               nullptr);
