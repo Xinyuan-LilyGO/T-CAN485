@@ -14,20 +14,26 @@
 #include <vector>
 
 #include "driver/gpio.h"
+#include "driver/sdspi_host.h"
+#include "driver/spi_common.h"
 #include "driver/twai.h"
 #include "driver/uart.h"
+#include "esp_err.h"
 #include "esp_event.h"
 #include "esp_http_server.h"
 #include "esp_mac.h"
 #include "esp_netif.h"
 #include "esp_sntp.h"
 #include "esp_timer.h"
+#include "esp_vfs_fat.h"
 #include "esp_wifi.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "led_strip.h"
 #include "led_strip_rmt.h"
 #include "nvs_flash.h"
+#include "sd_protocol_defs.h"
+#include "sdmmc_cmd.h"
 #include "t_can485_config.h"
 
 namespace {
@@ -40,6 +46,10 @@ constexpr int kWifiApChannel = 6;
 constexpr int kWifiApMaxConnection = 4;
 constexpr int kWifiInfoPeriodMs = 1000;
 constexpr int kTimeUpdatePeriodMs = 20000;
+
+constexpr char kMountPoint[] = "/sdcard";
+constexpr int kSdPollPeriodMs = 3000;
+constexpr int kSdSpiMaxFreqKhz = 10000;
 
 constexpr uart_port_t kRs485UartPort = UART_NUM_1;
 constexpr int kRs485BaudRate = 115200;
@@ -94,6 +104,13 @@ volatile TestMode g_rs485_mode = TestMode::kOff;
 volatile TestMode g_can_mode = TestMode::kOff;
 volatile bool g_wifi_sta_connected = false;
 
+bool g_sd_mounted = false;
+uint64_t g_sd_size_mb = 0;
+uint32_t g_sd_sector_size = 0;
+uint64_t g_sd_sector_count = 0;
+char g_sd_type[24] = "Not mounted";
+char g_sd_name[16] = "-";
+char g_sd_error[96] = "No card";
 char g_sta_ip[16] = "0.0.0.0";
 char g_sta_ssid[33] = "-";
 int8_t g_sta_rssi = 0;
@@ -101,7 +118,7 @@ char g_ap_ip[16] = "192.168.4.1";
 char g_ap_ssid[33] = "T-CAN485";
 char g_time_text[32] = "syncing";
 uint32_t g_time_age_seconds = 0;
-char g_status_json[1536] = {};
+char g_status_json[2048] = {};
 
 size_t g_rs485_total_size = 0;
 size_t g_rs485_bytes_this_time = 0;
@@ -120,6 +137,7 @@ uint32_t g_can_bus_error_count = 0;
 char g_can_state_text[24] = "off";
 bool g_can_recovering = false;
 int64_t g_can_last_recover_us = 0;
+bool g_sd_spi_bus_ready = false;
 
 const char* ModeName(TestMode mode)
 {
@@ -212,6 +230,106 @@ void Ws2812Task(void* param)
       SetWs2812Color(led_strip, color);
       vTaskDelay(pdMS_TO_TICKS(kWs2812PeriodMs));
     }
+  }
+}
+
+bool InitSdSpiBus()
+{
+  if (g_sd_spi_bus_ready) {
+    return true;
+  }
+
+  spi_bus_config_t bus_config = {};
+  bus_config.mosi_io_num = SD_MOSI;
+  bus_config.miso_io_num = SD_MISO;
+  bus_config.sclk_io_num = SD_SCLK;
+  bus_config.quadwp_io_num = -1;
+  bus_config.quadhd_io_num = -1;
+  bus_config.max_transfer_sz = 4000;
+
+  sdmmc_host_t host = SDSPI_HOST_DEFAULT();
+  esp_err_t err = spi_bus_initialize(static_cast<spi_host_device_t>(host.slot),
+                                     &bus_config, SDSPI_DEFAULT_DMA);
+  if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
+    return false;
+  }
+  g_sd_spi_bus_ready = true;
+  return true;
+}
+
+const char* CardTypeName(const sdmmc_card_t* card)
+{
+  if (card == nullptr) {
+    return "Unknown";
+  }
+  if (card->is_sdio) {
+    return "SDIO";
+  }
+  if (card->is_mmc) {
+    return "MMC";
+  }
+  return (card->ocr & SD_OCR_SDHC_CAP) ? "SDHC/SDXC" : "SDSC";
+}
+
+bool ProbeSdCard()
+{
+  if (!InitSdSpiBus()) {
+    g_sd_mounted = false;
+    std::snprintf(g_sd_error, sizeof(g_sd_error), "%s", "SPI bus init failed");
+    return false;
+  }
+
+  sdmmc_host_t host = SDSPI_HOST_DEFAULT();
+  host.max_freq_khz = kSdSpiMaxFreqKhz;
+
+  sdspi_device_config_t slot_config = SDSPI_DEVICE_CONFIG_DEFAULT();
+  slot_config.host_id = static_cast<spi_host_device_t>(host.slot);
+  slot_config.gpio_cs = static_cast<gpio_num_t>(SD_CS);
+
+  esp_vfs_fat_sdmmc_mount_config_t mount_config = {};
+  mount_config.format_if_mount_failed = false;
+  mount_config.max_files = 4;
+  mount_config.allocation_unit_size = 16 * 1024;
+  mount_config.disk_status_check_enable = true;
+
+  sdmmc_card_t* card = nullptr;
+  esp_err_t err = esp_vfs_fat_sdspi_mount(kMountPoint, &host, &slot_config,
+                                          &mount_config, &card);
+  if (err != ESP_OK) {
+    g_sd_mounted = false;
+    g_sd_size_mb = 0;
+    g_sd_sector_size = 0;
+    g_sd_sector_count = 0;
+    std::snprintf(g_sd_type, sizeof(g_sd_type), "%s", "Not mounted");
+    std::snprintf(g_sd_name, sizeof(g_sd_name), "%s", "-");
+    std::snprintf(g_sd_error, sizeof(g_sd_error), "%s", esp_err_to_name(err));
+    return false;
+  }
+
+  g_sd_mounted = true;
+  g_sd_size_mb = static_cast<uint64_t>(card->csd.capacity) *
+                 card->csd.sector_size / (1024ULL * 1024ULL);
+  g_sd_sector_size = card->csd.sector_size;
+  g_sd_sector_count = card->csd.capacity;
+  std::snprintf(g_sd_type, sizeof(g_sd_type), "%s", CardTypeName(card));
+  std::snprintf(g_sd_name, sizeof(g_sd_name), "%.5s",
+                reinterpret_cast<const char*>(card->cid.name));
+  std::snprintf(g_sd_error, sizeof(g_sd_error), "%s", "OK");
+  esp_vfs_fat_sdcard_unmount(kMountPoint, card);
+  return true;
+}
+
+void SdTask(void* param)
+{
+  (void)param;
+  bool last_mounted = false;
+  while (true) {
+    ProbeSdCard();
+    if (g_sd_mounted != last_mounted) {
+      printf("[sd] %s\n", g_sd_mounted ? "inserted" : "removed");
+      last_mounted = g_sd_mounted;
+    }
+    vTaskDelay(pdMS_TO_TICKS(kSdPollPeriodMs));
   }
 }
 
@@ -749,6 +867,9 @@ const char* StatusJson()
       "\"time\":\"%s\",\"time_age_seconds\":%lu,"
       "\"wifi\":{\"sta\":%s,\"sta_ssid\":\"%s\",\"sta_ip\":\"%s\","
       "\"sta_rssi\":%d,\"ap_ssid\":\"%s\",\"ap_ip\":\"%s\"},"
+      "\"sd\":{\"mounted\":%s,\"name\":\"%s\",\"type\":\"%s\","
+      "\"size_mb\":%llu,\"sector_size\":%lu,\"sector_count\":%llu,"
+      "\"error\":\"%s\"},"
       "\"rs485\":{\"mode\":\"%s\",\"total\":%u,\"ok\":%s,"
       "\"crc_errors\":%lu,\"sequence_errors\":%lu},"
       "\"can\":{\"mode\":\"%s\",\"total\":%u,\"ok\":%s,\"state\":\"%s\","
@@ -756,7 +877,12 @@ const char* StatusJson()
       "}",
       g_time_text, static_cast<unsigned long>(g_time_age_seconds),
       g_wifi_sta_connected ? "true" : "false", g_sta_ssid, g_sta_ip,
-      static_cast<int>(g_sta_rssi), g_ap_ssid, g_ap_ip, ModeName(rs485_mode),
+      static_cast<int>(g_sta_rssi), g_ap_ssid, g_ap_ip,
+      g_sd_mounted ? "true" : "false", g_sd_name, g_sd_type,
+      static_cast<unsigned long long>(g_sd_size_mb),
+      static_cast<unsigned long>(g_sd_sector_size),
+      static_cast<unsigned long long>(g_sd_sector_count), g_sd_error,
+      ModeName(rs485_mode),
       static_cast<unsigned>(g_rs485_total_size),
       g_rs485_data_ok ? "true" : "false",
       static_cast<unsigned long>(g_rs485_crc_error_count),
@@ -795,6 +921,9 @@ button.active{background:#1f8f5f;border-color:#32b878}
 <div class="card"><div class="label">Time</div><div class="value" id="time">-</div><div class="small" id="timeage"></div></div>
 </section>
 <section class="grid">
+<div class="card"><div class="label">SD Card</div><div class="value" id="sd">-</div><div class="small" id="sdinfo"></div></div>
+</section>
+<section class="grid">
 <div class="card"><div class="label">RS485</div><div class="value" id="rs485">-</div><div class="small" id="rs485t"></div><div class="row"><button onclick="setMode('rs485','send')">Send</button><button onclick="setMode('rs485','receive')">Receive</button><button onclick="setMode('rs485','stop')">Stop</button></div></div>
 <div class="card"><div class="label">CAN</div><div class="value" id="can">-</div><div class="small" id="cant"></div><div class="row"><button onclick="setMode('can','send')">Send</button><button onclick="setMode('can','receive')">Receive</button><button onclick="setMode('can','stop')">Stop</button></div></div>
 </section>
@@ -805,6 +934,7 @@ async function refresh(){
  const s=await (await fetch('/api/status')).json();
  time.textContent=s.time; timeage.textContent=`updated ${s.time_age_seconds} s ago`; sta.textContent=s.wifi.sta?s.wifi.sta_ssid:'Connecting'; sta.className='value '+(s.wifi.sta?'ok':'bad');
  staip.textContent=s.wifi.sta?`${s.wifi.sta_ip} | RSSI ${s.wifi.sta_rssi} dBm`:s.wifi.sta_ip; ap.textContent=s.wifi.ap_ssid; apip.textContent=s.wifi.ap_ip;
+ sd.textContent=s.sd.mounted?'Detected':'Not detected'; sd.className='value '+(s.sd.mounted?'ok':'bad'); sdinfo.textContent=`name ${s.sd.name} | ${s.sd.type} | ${s.sd.size_mb} MB | sector ${s.sd.sector_size} B | count ${s.sd.sector_count} | ${s.sd.error}`;
  const rs485Mode=s.rs485.mode.charAt(0).toUpperCase()+s.rs485.mode.slice(1);
  const canMode=s.can.mode.charAt(0).toUpperCase()+s.can.mode.slice(1);
  rs485.textContent=rs485Mode; rs485.className='value '+(s.rs485.ok?'ok':'bad'); rs485t.textContent=s.rs485.mode==='send'?`total ${s.rs485.total} B`:`total ${s.rs485.total} B | crc error ${s.rs485.crc_errors} | seq error ${s.rs485.sequence_errors}`;
@@ -906,6 +1036,8 @@ extern "C" void app_main(void)
               kTaskPriority, nullptr);
   xTaskCreate(Ws2812Task, "ws2812_task", kTaskStackSize, nullptr,
               kTaskPriority, nullptr);
+  xTaskCreate(SdTask, "sd_task", kTaskStackSize, nullptr, kTaskPriority,
+              nullptr);
   xTaskCreate(Rs485Task, "rs485_task", kTaskStackSize, nullptr, kTaskPriority,
               nullptr);
   xTaskCreate(CanTask, "can_task", kTaskStackSize, nullptr, kTaskPriority,
