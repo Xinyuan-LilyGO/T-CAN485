@@ -2,7 +2,7 @@
  * @Description: None
  * @Author: LILYGO_L
  * @Date: 2026-06-23 21:08:06
- * @LastEditTime: 2026-06-24 17:59:18
+ * @LastEditTime: 2026-08-27 14:11:13
  * @License: GPL 3.0
  */
 #include <array>
@@ -16,7 +16,6 @@
 #include "driver/gpio.h"
 #include "driver/sdspi_host.h"
 #include "driver/spi_common.h"
-#include "driver/twai.h"
 #include "driver/uart.h"
 #include "esp_err.h"
 #include "esp_event.h"
@@ -25,9 +24,12 @@
 #include "esp_netif.h"
 #include "esp_sntp.h"
 #include "esp_timer.h"
+#include "esp_twai.h"
+#include "esp_twai_onchip.h"
 #include "esp_vfs_fat.h"
 #include "esp_wifi.h"
 #include "freertos/FreeRTOS.h"
+#include "freertos/queue.h"
 #include "freertos/task.h"
 #include "led_strip.h"
 #include "led_strip_rmt.h"
@@ -77,6 +79,7 @@ constexpr int kCanPollMs = 100;
 constexpr int kCanMaxReceiveFramesPerLoop = 32;
 constexpr uint32_t kCanTestId = 0x0F1;
 constexpr char kCanTestChar = 'C';
+constexpr int kCanBitrate = 1000000;
 constexpr int kCanTxQueueDepth = 16;
 constexpr int kCanRxQueueDepth = 32;
 
@@ -100,6 +103,14 @@ struct Rgb {
   uint8_t red;
   uint8_t green;
   uint8_t blue;
+};
+
+struct CanRxFrame {
+  uint32_t id;
+  uint8_t data[kCanDataLength];
+  uint8_t data_length;
+  bool is_remote;
+  bool is_extended;
 };
 
 volatile TestMode g_rs485_mode = TestMode::kOff;
@@ -137,7 +148,11 @@ size_t g_can_bytes_this_time = 0;
 bool g_can_data_ok = true;
 uint32_t g_can_bus_error_count = 0;
 char g_can_state_text[24] = "off";
-bool g_can_recovering = false;
+twai_node_handle_t g_can_node = nullptr;
+QueueHandle_t g_can_rx_queue = nullptr;
+volatile uint32_t g_can_error_flags = 0;
+volatile twai_error_state_t g_can_state = TWAI_ERROR_ACTIVE;
+volatile bool g_can_recovering = false;
 int64_t g_can_last_recover_us = 0;
 bool g_sd_spi_bus_ready = false;
 
@@ -153,17 +168,17 @@ const char* ModeName(TestMode mode)
   }
 }
 
-const char* CanStateName(twai_state_t state)
+const char* CanStateName(twai_error_state_t state)
 {
   switch (state) {
-    case TWAI_STATE_STOPPED:
-      return "stopped";
-    case TWAI_STATE_RUNNING:
-      return "running";
-    case TWAI_STATE_BUS_OFF:
+    case TWAI_ERROR_ACTIVE:
+      return "active";
+    case TWAI_ERROR_WARNING:
+      return "warning";
+    case TWAI_ERROR_PASSIVE:
+      return "passive";
+    case TWAI_ERROR_BUS_OFF:
       return "bus_off";
-    case TWAI_STATE_RECOVERING:
-      return "recovering";
     default:
       return "unknown";
   }
@@ -635,67 +650,146 @@ void Rs485Task(void* param)
   }
 }
 
+bool IRAM_ATTR OnCanRxDone(twai_node_handle_t handle,
+                           const twai_rx_done_event_data_t* event,
+                           void* user_ctx)
+{
+  (void)event;
+  (void)user_ctx;
+  if (g_can_rx_queue == nullptr) {
+    return false;
+  }
+
+  uint8_t data[TWAI_FRAME_MAX_LEN] = {};
+  twai_frame_t frame = {};
+  frame.buffer = data;
+  frame.buffer_len = sizeof(data);
+  if (twai_node_receive_from_isr(handle, &frame) != ESP_OK) {
+    return false;
+  }
+
+  CanRxFrame rx_frame = {};
+  rx_frame.id = frame.header.id;
+  rx_frame.is_remote = frame.header.rtr;
+  rx_frame.is_extended = frame.header.ide;
+  uint16_t data_length = twaifd_dlc2len(frame.header.dlc);
+  if (data_length > kCanDataLength) {
+    data_length = kCanDataLength;
+  }
+  rx_frame.data_length = static_cast<uint8_t>(data_length);
+  for (uint16_t i = 0; i < data_length; ++i) {
+    rx_frame.data[i] = data[i];
+  }
+
+  BaseType_t high_task_wakeup = pdFALSE;
+  xQueueSendFromISR(g_can_rx_queue, &rx_frame, &high_task_wakeup);
+  return high_task_wakeup == pdTRUE;
+}
+
+bool IRAM_ATTR OnCanError(twai_node_handle_t handle,
+                          const twai_error_event_data_t* event,
+                          void* user_ctx)
+{
+  (void)handle;
+  (void)user_ctx;
+  g_can_error_flags |= event->err_flags.val;
+  return false;
+}
+
+bool IRAM_ATTR OnCanStateChange(twai_node_handle_t handle,
+                                const twai_state_change_event_data_t* event,
+                                void* user_ctx)
+{
+  (void)handle;
+  (void)user_ctx;
+  g_can_state = event->new_sta;
+  if (event->new_sta == TWAI_ERROR_ACTIVE) {
+    g_can_recovering = false;
+  }
+  return false;
+}
+
 bool InitCan()
 {
+  g_can_error_flags = 0;
+  g_can_state = TWAI_ERROR_ACTIVE;
   g_can_recovering = false;
   g_can_last_recover_us = 0;
-  std::snprintf(g_can_state_text, sizeof(g_can_state_text), "%s", "running");
+  std::snprintf(g_can_state_text, sizeof(g_can_state_text), "%s", "active");
 
-  twai_general_config_t general_config =
-      TWAI_GENERAL_CONFIG_DEFAULT(
-          static_cast<gpio_num_t>(t_can485::gpio::can::kTx),
-          static_cast<gpio_num_t>(t_can485::gpio::can::kRx), TWAI_MODE_NORMAL);
-  general_config.tx_queue_len = kCanTxQueueDepth;
-  general_config.rx_queue_len = kCanRxQueueDepth;
-  general_config.alerts_enabled =
-      TWAI_ALERT_BUS_ERROR | TWAI_ALERT_BUS_OFF | TWAI_ALERT_BUS_RECOVERED;
-  twai_timing_config_t timing_config = TWAI_TIMING_CONFIG_1MBITS();
-  twai_filter_config_t filter_config = TWAI_FILTER_CONFIG_ACCEPT_ALL();
-
-  esp_err_t err =
-      twai_driver_install(&general_config, &timing_config, &filter_config);
-  if (err != ESP_OK) {
+  g_can_rx_queue = xQueueCreate(kCanRxQueueDepth, sizeof(CanRxFrame));
+  if (g_can_rx_queue == nullptr) {
     return false;
   }
-  err = twai_start();
+
+  twai_onchip_node_config_t node_config = {};
+  node_config.io_cfg.tx = static_cast<gpio_num_t>(t_can485::gpio::can::kTx);
+  node_config.io_cfg.rx = static_cast<gpio_num_t>(t_can485::gpio::can::kRx);
+  node_config.io_cfg.quanta_clk_out = GPIO_NUM_NC;
+  node_config.io_cfg.bus_off_indicator = GPIO_NUM_NC;
+  node_config.bit_timing.bitrate = kCanBitrate;
+  node_config.fail_retry_cnt = 0;
+  node_config.tx_queue_depth = kCanTxQueueDepth;
+
+  esp_err_t err = twai_new_node_onchip(&node_config, &g_can_node);
   if (err != ESP_OK) {
-    twai_driver_uninstall();
+    vQueueDelete(g_can_rx_queue);
+    g_can_rx_queue = nullptr;
     return false;
   }
+
+  twai_mask_filter_config_t filter_config = {};
+  filter_config.id = 0;
+  filter_config.mask = 0;
+  ESP_ERROR_CHECK(twai_node_config_mask_filter(g_can_node, 0,
+                                               &filter_config));
+
+  twai_event_callbacks_t callbacks = {};
+  callbacks.on_rx_done = OnCanRxDone;
+  callbacks.on_error = OnCanError;
+  callbacks.on_state_change = OnCanStateChange;
+  ESP_ERROR_CHECK(twai_node_register_event_callbacks(g_can_node, &callbacks,
+                                                     nullptr));
+  ESP_ERROR_CHECK(twai_node_enable(g_can_node));
   return true;
 }
 
 void DeinitCan()
 {
-  twai_stop();
-  twai_driver_uninstall();
-  g_can_recovering = false;
+  if (g_can_node != nullptr) {
+    twai_node_transmit_wait_all_done(g_can_node, 100);
+    twai_node_disable(g_can_node);
+    twai_node_delete(g_can_node);
+    g_can_node = nullptr;
+  }
+  if (g_can_rx_queue != nullptr) {
+    vQueueDelete(g_can_rx_queue);
+    g_can_rx_queue = nullptr;
+  }
   std::snprintf(g_can_state_text, sizeof(g_can_state_text), "%s", "off");
 }
 
 void ServiceCanState()
 {
-  twai_status_info_t status = {};
-  if (twai_get_status_info(&status) != ESP_OK) {
+  if (g_can_node == nullptr) {
     return;
   }
-  g_can_bus_error_count = status.bus_error_count;
+
+  twai_node_status_t status = {};
+  twai_node_record_t record = {};
+  if (twai_node_get_info(g_can_node, &status, &record) != ESP_OK) {
+    return;
+  }
+  g_can_bus_error_count = record.bus_err_num;
   std::snprintf(g_can_state_text, sizeof(g_can_state_text), "%s",
                 CanStateName(status.state));
-
-  uint32_t alerts = 0;
-  if (twai_read_alerts(&alerts, 0) == ESP_OK &&
-      (alerts & TWAI_ALERT_BUS_RECOVERED) != 0) {
-    g_can_recovering = false;
-  }
 
   const int64_t now = esp_timer_get_time();
   const bool can_retry_recover =
       now - g_can_last_recover_us >= kCanRecoverRetryIntervalMs * 1000;
-  if (status.state == TWAI_STATE_BUS_OFF && !g_can_recovering &&
+  if (status.state == TWAI_ERROR_BUS_OFF && !g_can_recovering &&
       can_retry_recover) {
-    vTaskDelay(pdMS_TO_TICKS(kCanBusOffDelayMs));
-    if (twai_initiate_recovery() == ESP_OK) {
+    if (twai_node_recover(g_can_node) == ESP_OK) {
       g_can_recovering = true;
       g_can_last_recover_us = now;
     }
@@ -739,31 +833,34 @@ void CanTask(void* param)
 
     ServiceCanState();
     if (active_mode == TestMode::kSend) {
-      twai_status_info_t status = {};
-      if (twai_get_status_info(&status) == ESP_OK &&
-          status.state != TWAI_STATE_BUS_OFF) {
-        twai_message_t message = {};
-        message.identifier = kCanTestId;
-        message.data_length_code = kCanDataLength;
-        std::memcpy(message.data, tx_data, sizeof(tx_data));
-        if (twai_transmit(&message, pdMS_TO_TICKS(kCanTxWaitMs)) == ESP_OK) {
+      twai_node_status_t status = {};
+      twai_node_record_t record = {};
+      if (twai_node_get_info(g_can_node, &status, &record) == ESP_OK &&
+          status.state != TWAI_ERROR_BUS_OFF &&
+          status.tx_queue_remaining > 0) {
+        twai_frame_t frame = {};
+        frame.header.id = kCanTestId;
+        frame.header.dlc = kCanDataLength;
+        frame.buffer = tx_data;
+        frame.buffer_len = sizeof(tx_data);
+        if (twai_node_transmit(g_can_node, &frame, kCanTxWaitMs) == ESP_OK) {
           g_can_bytes_this_time += kCanDataLength;
           g_can_total_size += kCanDataLength;
         }
       }
       vTaskDelay(pdMS_TO_TICKS(kCanTxIntervalMs));
     } else {
-      twai_message_t message = {};
+      CanRxFrame rx_frame = {};
       int receive_count = 0;
       while (receive_count < kCanMaxReceiveFramesPerLoop &&
-             twai_receive(&message, pdMS_TO_TICKS(kCanPollMs)) == ESP_OK) {
+             xQueueReceive(g_can_rx_queue, &rx_frame,
+                           pdMS_TO_TICKS(kCanPollMs)) == pdTRUE) {
         ++receive_count;
-        if ((message.flags & TWAI_MSG_FLAG_EXTD) == 0 &&
-            (message.flags & TWAI_MSG_FLAG_RTR) == 0 &&
-            message.identifier == kCanTestId &&
-            message.data_length_code == kCanDataLength) {
-          g_can_bytes_this_time += message.data_length_code;
-          g_can_total_size += message.data_length_code;
+        if (!rx_frame.is_remote && !rx_frame.is_extended &&
+            rx_frame.id == kCanTestId &&
+            rx_frame.data_length == kCanDataLength) {
+          g_can_bytes_this_time += rx_frame.data_length;
+          g_can_total_size += rx_frame.data_length;
         } else {
           g_can_data_ok = false;
         }

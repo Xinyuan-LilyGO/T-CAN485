@@ -5,6 +5,7 @@ idf_component_register(SRC_DIRS "examples/general_test"
                                 esp_driver_gpio
                                 esp_driver_sdspi
                                 esp_driver_spi
+                                esp_driver_twai
                                 esp_driver_uart
                                 esp_event
                                 esp_http_server
